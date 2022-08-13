@@ -1,3 +1,25 @@
+class ArrayMap extends Map {
+	get(array) {
+	  return super.get(this.strKey(array));
+	}
+	
+	set(array, value) {
+	  return super.set(this.strKey(array), value);
+	}
+	
+	has(array) {
+	  return super.has(this.strKey(array));
+	}
+	
+	delete(array) {
+	  return super.delete(this.strKey(array));
+	}
+	
+	strKey(array) {
+	  return JSON.stringify(array);
+	}
+  }
+
 define(["./Attack"], function (Attack) {
 const SINGLE_RANK_MULT = 0.1436;
 const SCOUNDREL_CARD_HUMAN_THINKING_TIME = 0.3;
@@ -76,24 +98,75 @@ return {
 		const CARD_FLAME = 4;
 		const CARD_HEAL = 5;
 		
-		// Here's where we define what we do with every card. I wrote it so that:
-		/*
-			Format:
-			[
-				What do we do with this card? (ACTION_CARD_BURN, ACTION_CARD_USE),
-				Do we burn / use this card with a specific card(s)? (CARD_X)
-				What's the priority for putting this card on our belt?
-			]
-		*/
 		const ACTION_CARD_BURN = 0;
 		const ACTION_CARD_USE = 1;
+		const ACTION_CARD_STORE = 2;
+		const ACTION_CARD_BURN_AND_USE = 3;
+		const ACTION_CARD_USE_AND_BURN = 4;
 
-		const ACTION_CARD_FROST = [ACTION_CARD_BURN, [], 0];
-		const ACTION_CARD_HEAL = [ACTION_CARD_BURN, [], 0];
-		const ACTION_CARD_ASH = [ACTION_CARD_BURN, [CARD_POISON], 1];
-		const ACTION_CARD_WEAKNESS = [ACTION_CARD_BURN, [CARD_POISON], 1];
-		const ACTION_CARD_FLAME = [ACTION_CARD_USE, [], 0];
-		const ACTION_CARD_POISON = [ACTION_CARD_USE, [CARD_ASH, CARD_WEAKNESS], 2];
+		const ACTION_CARD_FROST = new ArrayMap();
+		const ACTION_CARD_HEAL = new ArrayMap();
+		const ACTION_CARD_ASH = new ArrayMap();
+		const ACTION_CARD_WEAKNESS = new ArrayMap();
+		const ACTION_CARD_FLAME = new ArrayMap();
+		const ACTION_CARD_POISON = new ArrayMap();
+
+		// Here's where we define what we do with every card. I wrote it so that:
+		/*
+			ACTION_CARD_CARDNAME.set([EFFECT, BELT_CARD], ACTION)
+			- CARDNAME = [FROST, HEAL, ASH, WEAKNESS, FLAME, POISON]
+			- EFFECT = [EFFECT_NONE, EFFECT_CHEAT, EFFECT_BOOST]
+			  	- EFFECT_CHEAT = Duplicate
+				- EFFECT_BOOST = Empower
+			- BELT_CARD = [CARD_FROST, CARD_HEAL, CARD_ASH, CARD_WEAKNESS, CARD_FLAME, CARD_POISON]
+			- ACTION = [ACTION_CARD_BURN, ACTION_CARD_USE, ACTION_CARD_STORE, ACTION_CARD_BURN_AND_USE, ACTION_CARD_USE_AND_BURN]
+				- BURN_AND_USE = Burns Drawn Card, Uses Belted Card
+				- USE_AND_BURN = Uses Drawn Card, Burns Belted Card
+
+			- If you set either EFFECT or BELT_CARD to "null", the action ignores the EFFECT / BELT_CARD
+				- EX: ACTION_CARD_FROST.set([null, CARD_POISON], ACTION_CARD_BURN_AND_USE) -> If you have a poison on your belt, and any effect,
+																							  Burn Frost and Use Poison
+
+			- Every card should have a default value:
+				- ACTION_CARD_CARDNAME.set([null, null], ACTION) -> If the action is not one of the other options, use this action.
+
+			- Try and specify what to do in collisions. For example:
+				- ([null, CARD_FLAME], ACTION_1)
+				- ([EFFECT_BOOST, null], ACTION_2)
+
+				- If you have EFFECT_BOOST and CARD_FLAME, the code will default to the EFFECT action (ACTION_2). In case you don't want this, specify:
+				- ([EFFECT_BOOST, CARD_FLAME], ACTION_1)
+
+		*/
+
+		ACTION_CARD_FROST.set([null, CARD_POISON], ACTION_CARD_BURN_AND_USE);
+		ACTION_CARD_FROST.set([null, null], ACTION_CARD_BURN);
+
+
+		ACTION_CARD_HEAL.set([null, CARD_POISON], ACTION_CARD_BURN_AND_USE);
+		ACTION_CARD_HEAL.set([null, null], ACTION_CARD_BURN);
+
+
+		ACTION_CARD_ASH.set([null, CARD_POISON], ACTION_CARD_BURN_AND_USE);
+		ACTION_CARD_ASH.set([null, CARD_WEAKNESS], ACTION_CARD_BURN);
+		ACTION_CARD_ASH.set([null, CARD_ASH], ACTION_CARD_BURN);
+		ACTION_CARD_ASH.set([null, null], ACTION_CARD_STORE);
+
+
+		ACTION_CARD_WEAKNESS.set([null, CARD_POISON], ACTION_CARD_BURN_AND_USE);
+		ACTION_CARD_WEAKNESS.set([null, CARD_WEAKNESS], ACTION_CARD_BURN);
+		ACTION_CARD_WEAKNESS.set([null, CARD_ASH], ACTION_CARD_BURN);
+		ACTION_CARD_WEAKNESS.set([null, null], ACTION_CARD_STORE);
+
+
+		ACTION_CARD_FLAME.set([null, null], ACTION_CARD_USE);
+
+
+		ACTION_CARD_POISON.set([null, null], ACTION_CARD_STORE);
+		ACTION_CARD_POISON.set([EFFECT_CHEAT, null], ACTION_CARD_USE);
+		ACTION_CARD_POISON.set([null, CARD_ASH], ACTION_CARD_USE_AND_BURN);
+		ACTION_CARD_POISON.set([null, CARD_POISON], ACTION_CARD_USE);
+		ACTION_CARD_POISON.set([null, CARD_WEAKNESS], ACTION_CARD_USE_AND_BURN);
 
 		const ACTIONS = [ACTION_CARD_FROST, ACTION_CARD_POISON, ACTION_CARD_ASH, ACTION_CARD_WEAKNESS, ACTION_CARD_FLAME, ACTION_CARD_HEAL];
 
@@ -168,7 +241,7 @@ return {
 				case CARD_ASH: return "Ash Card"
 				case CARD_POISON: return "Poison Card"
 				case CARD_FLAME: return "Flame Card"
-				default: return "None"
+				default: return "null"
 			}
 		}
 
@@ -176,7 +249,7 @@ return {
 			switch (burn){
 				case EFFECT_BOOST: return "Empower"
 				case EFFECT_CHEAT: return "Duplicate"
-				default: return "None"
+				default: return "null"
 			}
 		}
 
@@ -190,90 +263,46 @@ return {
 			var cardInHand = graphSpecificData.deck.shift();
 			attack.tiles = "";
 
-			print("Drawn Card: " + getCardName(cardInHand) + "  -  Stored Card: " + getCardName(graphSpecificData.storedCard) + "  -  Burned Effect: " + getBurnName(graphSpecificData.burnEffect))
+			print("Drawn Card: " + getCardName(cardInHand) + "  -  Stored Card: " + getCardName(graphSpecificData.storedCard) + "  -  Burned Effect: " + getBurnName(graphSpecificData.burnEffect), iteration)
 			
+			var actions = ACTIONS[cardInHand]
+			var act = actions.get([null, null])
+			act = actions.get([null, graphSpecificData.storedCard]) != undefined ? actions.get([null, graphSpecificData.storedCard]) : act
+			act = actions.get([graphSpecificData.burnEffect, null]) != undefined ? actions.get([graphSpecificData.burnEffect, null]) : act
+			act = actions.get([graphSpecificData.burnEffect, graphSpecificData.storedCard]) != undefined ? actions.get([graphSpecificData.burnEffect, graphSpecificData.storedCard]) : act
 			
-
-			if (ACTIONS[cardInHand][0] == ACTION_CARD_BURN) { // If you're supposed to burn the card
-				if (ACTIONS[cardInHand][1].length == 0) { // If you're supposed to burn the card, but not use it with any particular card
-					print(getCardName(cardInHand) + " Burned", iteration);
-					graphSpecificData.burnEffect = determineBurnEffect(cardInHand);
-					attack.tiles = Data.TILES.BURN_A_CARD;
-				}
-				else if (ACTIONS[cardInHand][1].includes(graphSpecificData.storedCard)) { // If you're supposed to burn the card with a specific card used, and your belt has that card
-					print(getCardName(cardInHand) + " Burned with " + getCardName(graphSpecificData.storedCard), iteration);
-					graphSpecificData.shootCard = graphSpecificData.storedCard;
-					graphSpecificData.storedCard = CARD_NONE;
-					graphSpecificData.burnEffect = determineBurnEffect(cardInHand);
-					attack.tiles = Data.TILES.BURN_A_CARD;
-				}
-				else if (graphSpecificData.storedCard == CARD_NONE) {  // If you're supposed to burn the card with a specific card used, and your belt is empty
-					print(getCardName(cardInHand) + " Stored", iteration);
-					graphSpecificData.storedCard = cardInHand;
-				}
-				else if (ACTIONS[cardInHand][2] <= ACTIONS[graphSpecificData.storedCard][2]) { // If you're supposed to burn the card with a specific card used, and your belt has a higher priority card
-					print(getCardName(cardInHand) + " Burned as Belted Card is " + getCardName(graphSpecificData.storedCard), iteration);
-					graphSpecificData.burnEffect = determineBurnEffect(cardInHand);
-					attack.tiles = Data.TILES.BURN_A_CARD;
-				}
-				else if (ACTIONS[cardInHand][2] > ACTIONS[graphSpecificData.storedCard][2]) { // If you're supposed to burn the card with a specific card used, and your belt has a higher priority card
-					if (ACTIONS[graphSpecificData.storedCard][0] == ACTION_CARD_BURN) {
-						print(getCardName(graphSpecificData.storedCard) + " Burned as Drawn Card is " + getCardName(cardInHand), iteration);
-						graphSpecificData.burnEffect = determineBurnEffect(graphSpecificData.storedCard);
-						graphSpecificData.storedCard = cardInHand;
-						attack.tiles = Data.TILES.BURN_A_CARD;
-					}
-					else if (ACTIONS[graphSpecificData.storedCard][0] == ACTION_CARD_USE) {
-						print(getCardName(graphSpecificData.storedCard) + " Used as Drawn Card is " + getCardName(cardInHand), iteration);
-						graphSpecificData.shootCard = graphSpecificData.storedCard;
-						graphSpecificData.storedCard = cardInHand;
-					}
-				}
+			if (act == ACTION_CARD_BURN) {
+				print(getCardName(cardInHand) + " Burned", iteration)
+				graphSpecificData.burnEffect = determineBurnEffect(cardInHand);
+				attack.tiles = Data.TILES.BURN_A_CARD;
 			}
-
-			else if (ACTIONS[cardInHand][0] == ACTION_CARD_USE) {
-				if (ACTIONS[cardInHand][1].length == 0) { // If you're supposed to use the card, but not use it with any particular effect
-					print(getCardName(cardInHand) + " Used", iteration);
-					graphSpecificData.shootCard = cardInHand;
-				}
-				else if (createBurnSet(ACTIONS[cardInHand][1]).has(graphSpecificData.burnEffect)) { // If you're supposed to use the card with a specific card burned, and that card is already burned
-					print(getCardName(cardInHand) + " Used with " + getBurnName(graphSpecificData.burnEffect) + " effect", iteration);
-					graphSpecificData.shootCard = cardInHand;
-				}
-				else if (graphSpecificData.storedCard == CARD_NONE) {  // If you're supposed to use the card with a specific card used, and your belt is empty
-					print(getCardName(cardInHand) + " Stored", iteration);
-					graphSpecificData.storedCard = cardInHand;
-				}
-				else if (createBurnSet(ACTIONS[cardInHand][1]).has(determineBurnEffect(graphSpecificData.storedCard))) { // If you're supposed to use the card with a specific card burned, and your belt has that card
-					print(getCardName(cardInHand) + " Used with " + getCardName(graphSpecificData.storedCard), iteration);
-					graphSpecificData.shootCard = cardInHand;
-					graphSpecificData.burnEffect = determineBurnEffect(graphSpecificData.storedCard);
-					graphSpecificData.storedCard = CARD_NONE;
-					attack.tiles = Data.TILES.BURN_A_CARD;
-				}
-				else if (ACTIONS[cardInHand][2] <= ACTIONS[graphSpecificData.storedCard][2]) { // If you're supposed to use the card with a specific card burned, and your belt has a higher priority card
-					print(getCardName(cardInHand) + " Used as Belted Card is " + getCardName(graphSpecificData.storedCard), iteration);
-					graphSpecificData.shootCard = cardInHand;
-				}
-				else if (ACTIONS[cardInHand][2] > ACTIONS[graphSpecificData.storedCard][2]) { // If you're supposed to burn the card with a specific card used, and your belt has a higher priority card
-					if (ACTIONS[graphSpecificData.storedCard][0] == ACTION_CARD_BURN) {
-						print(getCardName(graphSpecificData.storedCard) + " Burned as Drawn Card is " + getCardName(cardInHand), iteration);
-						graphSpecificData.burnEffect = determineBurnEffect(graphSpecificData.storedCard);
-						graphSpecificData.storedCard = cardInHand;
-						attack.tiles = Data.TILES.BURN_A_CARD;
-					}
-					else if (ACTIONS[graphSpecificData.storedCard][0] == ACTION_CARD_USE) {
-						print(getCardName(graphSpecificData.storedCard) + " Used as Drawn Card is " + getCardName(cardInHand), iteration);
-						graphSpecificData.shootCard = graphSpecificData.storedCard;
-						graphSpecificData.storedCard = cardInHand;
-					}
-				}
+			if (act == ACTION_CARD_USE) {
+				print(getCardName(cardInHand) + " Used with " + getBurnName(graphSpecificData.burnEffect) + " effect", iteration)
+				graphSpecificData.shootCard = cardInHand;
+			}
+			if (act == ACTION_CARD_STORE) {
+				print(getCardName(cardInHand) + " Stored", iteration)
+				graphSpecificData.storedCard = cardInHand;
+			}
+			if (act == ACTION_CARD_BURN_AND_USE) {
+				print(getCardName(cardInHand) + " Burned with " + getCardName(graphSpecificData.storedCard), iteration)
+				graphSpecificData.shootCard = graphSpecificData.storedCard;
+				graphSpecificData.storedCard = CARD_NONE;
+				graphSpecificData.burnEffect = determineBurnEffect(cardInHand);
+				attack.tiles = Data.TILES.BURN_A_CARD;
+			}
+			if (act == ACTION_CARD_USE_AND_BURN) {
+				print(getCardName(cardInHand) + " Used with " + getCardName(graphSpecificData.storedCard), iteration)
+				graphSpecificData.shootCard = cardInHand;
+				graphSpecificData.burnEffect = determineBurnEffect(graphSpecificData.storedCard);
+				graphSpecificData.storedCard = CARD_NONE;
+				attack.tiles = Data.TILES.BURN_A_CARD;
 			}
 
 			
 			// Make a new deck if there are no cards left in the deck.
 			if(graphSpecificData.deck.length == 0){
-				print(" - DECK RESETS")
+				print(" - DECK RESETS", iteration)
 				graphSpecificData.deck = generateRandomDeck();
 			}
 			return 1;
@@ -338,7 +367,7 @@ return {
 					var newAttack = clone(SCOUNDREL_NEW_SPAWNED_CARD);
 					targetPatternData.pattern.splice(targetPatternData.patternIdx+1, 0, newAttack);
 				} else if(graphSpecificData.shootCard == CARD_HEAL){
-					SCOUNDREL_NEW_SPAWNED_CARD.tiles = DATA.TILES.LIGHT_CARD;
+					SCOUNDREL_NEW_SPAWNED_CARD.tiles = Data.TILES.LIGHT_CARD;
 					var newAttack = clone(SCOUNDREL_NEW_SPAWNED_CARD);
 					targetPatternData.pattern.splice(targetPatternData.patternIdx+1, 0, newAttack);
 				}
